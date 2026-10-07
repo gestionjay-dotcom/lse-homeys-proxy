@@ -234,10 +234,24 @@ const INDEX_POSTES: Record<string, string[]> = {
 };
 const VARIABLE_TOTAL = "energie_elec_tout";
 
-export function periodeConso(dispo: { du: string; au: string } | null, mois: number) {
-  const au = (dispo?.au ?? new Date().toISOString()).slice(0, 10);
-  let du = minusMonths(au, mois);
-  if (dispo?.du && dispo.du.slice(0, 10) > du) du = dispo.du.slice(0, 10);
+/** Date du jour à Paris (AAAA-MM-JJ), indépendante du fuseau du serveur. */
+function aujourdhuiParis(now = new Date()): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(now);
+}
+
+/**
+ * Période de consommation : de la même date il y a `mois` mois (12 = N-1) jusqu'à la veille.
+ * Ex. le 2026-10-07 : du 2025-10-07 au 2026-10-06 (365 jours, bornes incluses).
+ */
+export function periodeConso(dispo: { du: string; au: string } | null, mois: number, now = new Date()) {
+  const [y, m, d] = aujourdhuiParis(now).split("-").map(Number);
+  const cible = new Date(Date.UTC(y, m - 1 - mois, 1));
+  const jours = new Date(Date.UTC(cible.getUTCFullYear(), cible.getUTCMonth() + 1, 0)).getUTCDate();
+  cible.setUTCDate(Math.min(d, jours)); // 29 février -> 28 février si l'année cible n'est pas bissextile
+  let du = cible.toISOString().slice(0, 10);
+  const veille = new Date(Date.UTC(y, m - 1, d - 1));
+  const au = veille.toISOString().slice(0, 10);
+  if (dispo?.du && dispo.du.slice(0, 10) > du) du = dispo.du.slice(0, 10); // source avec moins d'historique
   return { du, au };
 }
 
