@@ -1,7 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import { getCollecte, initDb, insertCollecte } from "./db";
-import { testConnexion } from "./homeys";
+import { getDailyRaw, testConnexion } from "./homeys";
 import { startWorker } from "./worker";
 
 const app = express();
@@ -20,6 +20,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.get("/homeys/test", async (_req, res) => {
   try { res.json(await testConnexion()); }
   catch (e: any) { res.status(502).json({ erreur: e.message, detail: e.body ?? null }); }
+});
+
+// Diagnostic : toutes les variables journalières d'une source (7 derniers jours par défaut)
+app.get("/homeys/debug/daily/:idSource", async (req, res) => {
+  try {
+    const au = String(req.query.au ?? new Date().toISOString().slice(0, 10));
+    const du = String(req.query.du ?? new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10));
+    res.json(await getDailyRaw(req.params.idSource, du, au));
+  } catch (e: any) { res.status(502).json({ erreur: e.message, detail: e.body ?? null }); }
 });
 
 // Lancer une collecte

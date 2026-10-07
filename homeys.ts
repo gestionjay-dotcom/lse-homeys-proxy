@@ -1,5 +1,5 @@
 import { config } from "./config";
-import { BusinessError, Log, minusMonths, norm } from "./util";
+import { BusinessError, Log, minusMonths, monthsAgo, norm } from "./util";
 
 export class HomeysError extends Error {
   constructor(public status: number, public body: string, msg: string) {
@@ -87,13 +87,20 @@ const FR = "France";
 
 async function findBuilding(p: any): Promise<string | undefined> {
   const rue = norm(p.adresse.rue);
-  const list = await listAll("/open/v1/building", { search: p.adresse.rue });
-  const hit = list.find((b) => {
-    const a = b.address ?? {};
-    const street = norm(String(a.street ?? ""));
-    return String(a.zipcode) === String(p.adresse.cp) && street !== "" && (street.includes(rue) || rue.includes(street));
+  const nom = norm(p.raison_sociale ?? "");
+  const vus = new Map<string, any>();
+  for (const terme of [p.adresse.rue, p.raison_sociale]) {
+    if (!terme) continue;
+    for (const b of await listAll("/open/v1/building", { search: terme })) vus.set(b._id, b);
+  }
+  const list = [...vus.values()];
+  const memeCp = (b: any) => String(b.address?.zipcode) === String(p.adresse.cp);
+  const parRue = list.find((b) => {
+    const street = norm(String(b.address?.street ?? ""));
+    return memeCp(b) && street !== "" && (street.includes(rue) || rue.includes(street));
   });
-  return hit?._id;
+  const parNom = nom ? list.find((b) => memeCp(b) && norm(String(b.name ?? "")) === nom) : undefined;
+  return (parRue ?? parNom)?._id;
 }
 
 export async function findOrCreateBuilding(p: any, log: Log): Promise<string> {
@@ -141,7 +148,7 @@ export async function createConsentRequest(p: any, idBuilding: string) {
   const pro = Boolean(p.siren);
   const body: any = {
     user: { firstname: p.signataire.prenom, lastname: p.signataire.nom, username: p.signataire.email, isPro: pro },
-    consentrequest: [{ idsource: p.pdl, idtype: "pdl", address: adresse, _id_building: idBuilding }],
+    consentrequest: [{ idsource: p.pdl, idtype: "pdl", address: adresse, date_from_data: monthsAgo(p.historique_mois ?? 12), _id_building: idBuilding }],
   };
   // company au niveau racine selon le schéma OpenAPI (le guide la montre dans "user" : voir README si erreur 4xx)
   if (pro) {
@@ -239,6 +246,7 @@ export async function getConsoParPoste(idSource: string, periode: { du: string; 
   });
   const rows = asArray(res);
   log(`données journalières : ${rows.length} ligne(s), extrait`, rows.slice(0, 2));
+  log("variables présentes dans la 1re ligne", Object.keys(rows[0] ?? {}));
 
   const somme = (nom: string): number | null => {
     let total = 0, vu = false;
@@ -259,4 +267,11 @@ export async function getConsoParPoste(idSource: string, periode: { du: string; 
   if (total !== null) return { TOTAL: total };
   log("aucune consommation trouvée sur la période");
   return null;
+}
+
+/** Diagnostic : renvoie les premières lignes journalières SANS filtre de variables (toutes celles que Homeys fournit). */
+export async function getDailyRaw(idSource: string, du: string, au: string) {
+  const res = await hFetch("GET", "/open/v1/source/data/daily", { query: { _id_source: [idSource], date_from: du, date_to: au } });
+  const rows = asArray(res);
+  return { nb_lignes: rows.length, variables: Object.keys(rows[0] ?? {}), extrait: rows.slice(0, 2) };
 }
