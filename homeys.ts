@@ -217,6 +217,8 @@ export function extractContrat(src: any) {
     puissance_kva: (ps.puissance ?? null) as number | null,
     puissances_par_poste_kva: denivele,
     dispo: sout?.date_from ? { du: String(sout.date_from), au: String(sout.date_to) } : null,
+    source_created_at: ((src?.data ?? src)?.created_at ?? null) as string | null,
+    mise_en_service: (pdl.mise_en_service?.soutirage ?? null) as string | null,
   };
 }
 

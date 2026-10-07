@@ -133,8 +133,21 @@ async function advance(c: Collecte, log: Log) {
         throw new BusinessError(`Récupération de l'historique en échec (état Homeys : ${k.historiqueState})`);
       }
       if (k.historiqueState !== "finished") return goto(c, "ATTENTE_HISTORIQUE", POLL());
+      // Homeys annonce « finished » avant d'avoir rapatrié tout l'historique d'une source neuve :
+      // si l'historique est plus court que la période voulue, on attend (sauf compteur récent ou délai dépassé).
+      const voulu = periodeConso(null, p.historique_mois ?? 12).du;
+      const tolerance = new Date(voulu + "T00:00:00Z"); tolerance.setUTCDate(tolerance.getUTCDate() + 3);
+      const tropCourt = !!k.dispo?.du && k.dispo.du.slice(0, 10) > tolerance.toISOString().slice(0, 10);
+      const compteurRecent = !!k.mise_en_service && k.mise_en_service.slice(0, 10) > voulu;
+      const creeLe = k.source_created_at ? Date.parse(k.source_created_at.endsWith("Z") ? k.source_created_at : k.source_created_at + "Z") : NaN;
+      const age = Number.isNaN(creeLe) ? Infinity : Date.now() - creeLe;
+      if (tropCourt && !compteurRecent && age < config.historyGraceMs) {
+        log(`historique incomplet (début ${k.dispo!.du.slice(0, 10)}, voulu ${voulu}) : nouvelle vérification`, { source_creee_il_y_a_min: Math.round(age / 60000) });
+        return goto(c, "ATTENTE_HISTORIQUE", POLL());
+      }
+      if (tropCourt) log(`historique plus court que voulu (début ${k.dispo!.du.slice(0, 10)}, voulu ${voulu}) : on continue avec ce qui est disponible`);
       log("contrat lu (réponse brute pour vérifier le mapping)", src);
-      const { historiqueState, consentEtat, etat_pdl, ...contrat } = k;
+      const { historiqueState, consentEtat, etat_pdl, source_created_at, mise_en_service, ...contrat } = k;
       return goto(c, "AGREGATS", 0, { resultat: contrat });
     }
 

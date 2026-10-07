@@ -13,6 +13,8 @@ export const config = {
   homeysUsername: need("HOMEYS_USERNAME"),
   homeysPassword: need("HOMEYS_PASSWORD"),
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MIN ?? 15) * 60_000,
+  // Une source toute neuve dont l'historique est incomplet est relue pendant ce délai avant d'accepter le résultat
+  historyGraceMs: Number(process.env.HISTORY_GRACE_MIN ?? 180) * 60_000,
   maxWaitMs: Number(process.env.POLL_MAX_HOURS ?? 48) * 3_600_000,
   // Auto-signature par PUT sur la demande de consentement (documenté par Homeys). "false" pour désactiver.
   autoSign: process.env.HOMEYS_AUTOSIGN !== "false",
