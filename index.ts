@@ -1,7 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import { getCollecte, initDb, insertCollecte } from "./db";
-import { getDailyRaw, testConnexion } from "./homeys";
+import { debugGet, testConnexion } from "./homeys";
 import { startWorker } from "./worker";
 
 const app = express();
@@ -22,12 +22,11 @@ app.get("/homeys/test", async (_req, res) => {
   catch (e: any) { res.status(502).json({ erreur: e.message, detail: e.body ?? null }); }
 });
 
-// Diagnostic : toutes les variables journalières d'une source (7 derniers jours par défaut)
-app.get("/homeys/debug/daily/:idSource", async (req, res) => {
+// Diagnostic : GET générique en lecture seule sur une route /open/... de Homeys
+app.get("/homeys/debug/get", async (req, res) => {
   try {
-    const au = String(req.query.au ?? new Date().toISOString().slice(0, 10));
-    const du = String(req.query.du ?? new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10));
-    res.json(await getDailyRaw(req.params.idSource, du, au));
+    const { path, ...reste } = req.query as Record<string, any>;
+    res.json(await debugGet(String(path ?? ""), reste));
   } catch (e: any) { res.status(502).json({ erreur: e.message, detail: e.body ?? null }); }
 });
 

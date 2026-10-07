@@ -269,9 +269,14 @@ export async function getConsoParPoste(idSource: string, periode: { du: string; 
   return null;
 }
 
-/** Diagnostic : renvoie les premières lignes journalières SANS filtre de variables (toutes celles que Homeys fournit). */
-export async function getDailyRaw(idSource: string, du: string, au: string) {
-  const res = await hFetch("GET", "/open/v1/source/data/daily", { query: { _id_source: [idSource], date_from: du, date_to: au } });
+/** Diagnostic : GET générique sur une route /open/... de Homeys (lecture seule). */
+export async function debugGet(path: string, query: Record<string, any>) {
+  if (!path.startsWith("/open/")) throw new BusinessError("Le chemin doit commencer par /open/");
+  const q: Query = {};
+  for (const [k, v] of Object.entries(query)) {
+    q[k] = k === "variables" || k === "_id_source" ? (Array.isArray(v) ? v : String(v).split(",")) : v;
+  }
+  const res = await hFetch("GET", path, { query: q });
   const rows = asArray(res);
-  return { nb_lignes: rows.length, variables: Object.keys(rows[0] ?? {}), extrait: rows.slice(0, 2) };
+  return { nb_lignes: rows.length || undefined, cles_1re_ligne: Object.keys(rows[0] ?? {}), extrait: rows.length ? rows.slice(0, 3) : res };
 }
