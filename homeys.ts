@@ -222,13 +222,14 @@ export function extractContrat(src: any) {
 
 /* ---------- Étape 7 : kWh par poste (route journalière, sommée par le proxy) ---------- */
 
-// Variables du catalogue Homeys (clé Homeys → poste LSE). À valider au premier test.
-const VARIABLES_CONSO: Record<string, string> = {
-  HPH: "energie_elec_turpeHPH",
-  HCH: "energie_elec_turpeHCH",
-  HPB: "energie_elec_turpeHPE",
-  HCB: "energie_elec_turpeHCE",
-  PTE: "energie_elec_turpePointe",
+// Index de compteur par poste (variables confirmées sur une vraie source : idxenergie_elec_turpeXXX.last).
+// La conso d'un poste = index du dernier jour - index de la veille du début de période.
+const INDEX_POSTES: Record<string, string> = {
+  HPH: "idxenergie_elec_turpeHPH",
+  HCH: "idxenergie_elec_turpeHCH",
+  HPB: "idxenergie_elec_turpeHPE", // HPE (saison basse) -> HPB
+  HCB: "idxenergie_elec_turpeHCE", // HCE (saison basse) -> HCB
+  PTE: "idxenergie_elec_turpePointe",
 };
 const VARIABLE_TOTAL = "energie_elec_tout";
 
@@ -240,31 +241,37 @@ export function periodeConso(dispo: { du: string; au: string } | null, mois: num
 }
 
 export async function getConsoParPoste(idSource: string, periode: { du: string; au: string }, log: Log) {
-  const noms = [...Object.values(VARIABLES_CONSO), VARIABLE_TOTAL];
+  const veille = (() => { const d = new Date(periode.du + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })();
+  const variables = [...Object.values(INDEX_POSTES).map((n) => `${n}.last`), `${VARIABLE_TOTAL}.sum`];
   const res = await hFetch("GET", "/open/v1/source/data/daily", {
-    query: { _id_source: [idSource], date_from: periode.du, date_to: periode.au, variables: noms.map((n) => `${n}.sum`) },
+    query: { _id_source: [idSource], date_from: veille, date_to: periode.au, variables },
   });
-  const rows = asArray(res);
+  const rows = asArray(res).sort((x, y) => String(x.date).localeCompare(String(y.date)));
   log(`données journalières : ${rows.length} ligne(s), extrait`, rows.slice(0, 2));
-  log("variables présentes dans la 1re ligne", Object.keys(rows[0] ?? {}));
 
-  const somme = (nom: string): number | null => {
-    let total = 0, vu = false;
-    for (const row of rows) {
-      const v = row?.[`${nom}.sum`] ?? row?.[nom]?.sum;
-      if (typeof v === "number") { total += v; vu = true; }
-    }
-    return vu ? Math.round((total / config.energyDivisor) * 10) / 10 : null;
-  };
+  const serie = (nom: string, stat: string): number[] =>
+    rows.map((r) => r?.[nom]?.[stat]).filter((v) => typeof v === "number");
+  const r1 = (n: number) => Math.round(n * 10) / 10;
 
   const out: Record<string, number> = {};
-  for (const [poste, nom] of Object.entries(VARIABLES_CONSO)) {
-    const s = somme(nom);
-    if (s !== null) out[poste] = s;
+  for (const [poste, nom] of Object.entries(INDEX_POSTES)) {
+    const idx = serie(nom, "last");
+    if (idx.length >= 2) out[poste] = r1((idx[idx.length - 1] - idx[0]) / config.energyDivisor);
   }
-  if (Object.keys(out).length) return out;
-  const total = somme(VARIABLE_TOTAL); // Base : pas de ventilation, on remonte le total
-  if (total !== null) return { TOTAL: total };
+  const totalJours = serie(VARIABLE_TOTAL, "sum");
+  // La ligne de la veille ne compte pas dans le total : on ne somme que les jours de la période
+  const totalPeriode = rows.filter((r) => String(r.date) >= periode.du).map((r) => r?.[VARIABLE_TOTAL]?.sum).filter((v) => typeof v === "number") as number[];
+  const total = totalPeriode.length ? r1(totalPeriode.reduce((a, b) => a + b, 0) / config.energyDivisor) : null;
+  void totalJours;
+
+  if (Object.keys(out).length) {
+    const somme = r1(Object.values(out).reduce((a, b) => a + b, 0));
+    if (total && Math.abs(somme - total) / total > 0.02) {
+      log(`⚠ écart entre la somme des postes (${somme}) et le total (${total}) supérieur à 2 %`);
+    }
+    return out;
+  }
+  if (total !== null) return { TOTAL: total }; // Base : pas de ventilation
   log("aucune consommation trouvée sur la période");
   return null;
 }
