@@ -27,22 +27,35 @@ async function fail(c: Collecte, message: string, log: Log) {
 
 function payloadPourBubble(c: Collecte) {
   const r = c.resultat ?? {};
+  const pw = r.puissances_par_poste_kva ?? {};
+  const conso = r.conso_kwh_par_poste ?? {};
+  const somme = Object.values(conso).reduce((a: number, v) => a + (typeof v === "number" ? v : 0), 0);
+  const aConso = Object.keys(conso).length > 0;
+  // Format "à plat" : plus simple à lire pour un workflow Bubble que des objets imbriqués
   return {
     collecte_id: c.collecte_id,
     statut: c.statut === "erreur" ? "erreur" : "termine",
     segment: r.segment ?? null,
     fta: r.fta ?? null,
-    puissance_kva: r.puissance_kva ?? null,
-    puissances_par_poste_kva: r.puissances_par_poste_kva ?? null,
-    conso_kwh_par_poste: r.conso_kwh_par_poste ?? null,
-    periode: r.periode ?? null,
     calendrier_fournisseur: r.calendrier_fournisseur ?? null,
-    homeys: {
-      id_source: c.homeys.id_source ?? null,
-      id_consentrequest: c.homeys.id_consentrequest ?? null,
-      id_building: c.homeys.id_building ?? null,
-      source_preexistante: c.homeys.source_preexistante ?? false,
-    },
+    puissance_kva: r.puissance_kva ?? null,
+    puissance_pte_kva: pw.PTE ?? null,
+    puissance_hph_kva: pw.HPH ?? null,
+    puissance_hch_kva: pw.HCH ?? null,
+    puissance_hpb_kva: pw.HPB ?? null,
+    puissance_hcb_kva: pw.HCB ?? null,
+    conso_pte_kwh: conso.PTE ?? null,
+    conso_hph_kwh: conso.HPH ?? null,
+    conso_hch_kwh: conso.HCH ?? null,
+    conso_hpb_kwh: conso.HPB ?? null,
+    conso_hcb_kwh: conso.HCB ?? null,
+    conso_total_kwh: aConso ? Math.round(somme * 10) / 10 : null,
+    periode_du: r.periode?.du ?? null,
+    periode_au: r.periode?.au ?? null,
+    id_source: c.homeys.id_source ?? null,
+    id_consentrequest: c.homeys.id_consentrequest ?? null,
+    id_building: c.homeys.id_building ?? null,
+    source_preexistante: c.homeys.source_preexistante ?? false,
     erreur: c.erreur,
   };
 }
