@@ -224,12 +224,13 @@ export function extractContrat(src: any) {
 
 // Index de compteur par poste (variables confirmées sur une vraie source : idxenergie_elec_turpeXXX.last).
 // La conso d'un poste = index du dernier jour - index de la veille du début de période.
-const INDEX_POSTES: Record<string, string> = {
-  HPH: "idxenergie_elec_turpeHPH",
-  HCH: "idxenergie_elec_turpeHCH",
-  HPB: "idxenergie_elec_turpeHPE", // HPE (saison basse) -> HPB
-  HCB: "idxenergie_elec_turpeHCE", // HCE (saison basse) -> HCB
-  PTE: "idxenergie_elec_turpePointe",
+const INDEX_POSTES: Record<string, string[]> = {
+  HPH: ["idxenergie_elec_turpeHPH"],
+  HCH: ["idxenergie_elec_turpeHCH"],
+  // Saison basse : la doc des bâtiments dit HPE/HCE, le catalogue d'une source dit HPB/HCB -> on essaie les deux
+  HPB: ["idxenergie_elec_turpeHPB", "idxenergie_elec_turpeHPE"],
+  HCB: ["idxenergie_elec_turpeHCB", "idxenergie_elec_turpeHCE"],
+  PTE: ["idxenergie_elec_turpePointe", "idxenergie_elec_turpePTE"],
 };
 const VARIABLE_TOTAL = "energie_elec_tout";
 
@@ -242,7 +243,7 @@ export function periodeConso(dispo: { du: string; au: string } | null, mois: num
 
 export async function getConsoParPoste(idSource: string, periode: { du: string; au: string }, log: Log) {
   const veille = (() => { const d = new Date(periode.du + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })();
-  const variables = [...Object.values(INDEX_POSTES).map((n) => `${n}.last`), `${VARIABLE_TOTAL}.sum`];
+  const variables = [...Object.values(INDEX_POSTES).flat().map((n) => `${n}.last`), `${VARIABLE_TOTAL}.sum`];
   const res = await hFetch("GET", "/open/v1/source/data/daily", {
     query: { _id_source: [idSource], date_from: veille, date_to: periode.au, variables },
   });
@@ -254,10 +255,13 @@ export async function getConsoParPoste(idSource: string, periode: { du: string; 
   const r1 = (n: number) => Math.round(n * 10) / 10;
 
   const out: Record<string, number> = {};
-  for (const [poste, nom] of Object.entries(INDEX_POSTES)) {
-    const idx = serie(nom, "last");
-    if (idx.length >= 2) out[poste] = r1((idx[idx.length - 1] - idx[0]) / config.energyDivisor);
+  for (const [poste, noms] of Object.entries(INDEX_POSTES)) {
+    for (const nom of noms) {
+      const idx = serie(nom, "last");
+      if (idx.length >= 2) { out[poste] = r1((idx[idx.length - 1] - idx[0]) / config.energyDivisor); break; }
+    }
   }
+  log("variables d'index présentes", [...new Set(rows.flatMap((r) => Object.keys(r)))]);
   const totalJours = serie(VARIABLE_TOTAL, "sum");
   // La ligne de la veille ne compte pas dans le total : on ne somme que les jours de la période
   const totalPeriode = rows.filter((r) => String(r.date) >= periode.du).map((r) => r?.[VARIABLE_TOTAL]?.sum).filter((v) => typeof v === "number") as number[];
